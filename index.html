@@ -125,6 +125,17 @@ table.dt{width:100%;border-collapse:collapse;font-size:0.8rem;margin:12px 0}
       No race exceeds a &plusmn;3 point gap. All 38 gaps cluster near zero.
     </div>
   </div>
+  <div class="tp" id="p-pri">
+    <div class="ct">June 2022 Primary: Within-Party Test</div>
+    <div class="cs">If RPV exists, D1 should prefer different candidates even within the same party. Does it?</div>
+    <div id="priContent"></div>
+    <div class="ip" id="priInterp">
+      <strong>Finding:</strong> Even when partisanship is completely removed &mdash; comparing Democrat vs. Democrat
+      and Republican vs. Republican &mdash; District 1 votes within <span class="hl">0.6&ndash;4.4 pts</span> of the rest of the city.
+      All gaps are small, and all go in the same direction (D1 slightly less frontrunner-favoring).
+      This is <strong>normal variation</strong>, not a racial signal.
+    </div>
+  </div>
   <div class="tp" id="p-exp">
     <div class="ct">Race-by-Race Explorer</div>
     <select class="rs" id="rSel"></select>
@@ -173,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Tabs
-  const tabs = [{id:'eco',l:'Regression'},{id:'45',l:'D1 vs Rest'},{id:'gap',l:'Gap Dist.'},{id:'exp',l:'Explorer'},{id:'dem',l:'Demographics'}];
+  const tabs = [{id:'eco',l:'Regression'},{id:'45',l:'D1 vs Rest'},{id:'gap',l:'Gap Dist.'},{id:'pri',l:'Primary'},{id:'exp',l:'Explorer'},{id:'dem',l:'Demographics'}];
   const tb = document.getElementById('tb');
   tabs.forEach((t,i) => {
     const b = document.createElement('div');
@@ -197,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
   buildEco();
   build45();
   buildGap();
+  buildPrimary();
   buildExplorer();
   buildDemo();
 });
@@ -549,6 +561,42 @@ function buildGap() {
       layout: {padding: {right: 10}},
     }
   });
+}
+
+function buildPrimary() {
+  const container = document.getElementById('priContent');
+  const partyColors = {DEM: '#6366f1', REP: '#f87171'};
+
+  let html = '';
+  PRIMARY.races.forEach(race => {
+    const pc = partyColors[race.party] || '#888';
+    const partyLabel = race.party === 'DEM' ? 'Democratic' : 'Republican';
+
+    // Compute per-district percentages
+    html += `<div class="dc" style="margin-bottom:12px;border-left:3px solid ${pc}">
+      <div class="dl" style="color:${pc}">${race.fullName}</div>
+      <div style="font-size:0.78rem;color:var(--tx2);margin-bottom:8px">${race.cand1} vs ${race.cand2} &middot;
+        Gap: <strong style="color:${Math.abs(race.gap)<2?'var(--gn)':'var(--or)'}">${race.gap>0?'+':''}${race.gap.toFixed(1)} pts</strong></div>`;
+
+    for (let d = 1; d <= 5; d++) {
+      const dd = race.districts[d];
+      const total = dd.c1 + dd.c2;
+      const pct1 = total > 0 ? (dd.c1 / total * 100).toFixed(1) : '0';
+      const nw = DEM[d].nwCvap;
+      const isD1 = d === 1;
+      const dColor = DC[d-1];
+
+      html += `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:0.78rem">
+        <span style="width:110px;flex-shrink:0;color:${dColor};font-weight:${isD1?'700':'400'}">D${d} (${nw}% NW)</span>
+        <div class="bt" style="flex:1;height:16px"><div class="bf" style="width:${pct1}%;background:${pc}"></div></div>
+        <span style="width:44px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${pct1}%</span>
+      </div>`;
+    }
+
+    html += `</div>`;
+  });
+
+  container.innerHTML = html;
 }
 
 function buildExplorer() {

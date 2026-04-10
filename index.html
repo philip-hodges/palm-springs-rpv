@@ -98,10 +98,16 @@ table.dt{width:100%;border-collapse:collapse;font-size:0.8rem;margin:12px 0}
   </div>
   <div class="tp" id="p-45">
     <div class="ct">District 1 vs. Rest of Palm Springs</div>
-    <div class="cs">Each dot = one race. Diagonal line = perfect agreement between D1 and D2&ndash;5.</div>
+    <div class="cs" id="cs45">Each dot = one race. Diagonal line = perfect agreement between D1 and D2&ndash;5.</div>
+    <div style="display:flex;justify-content:center;margin-bottom:12px">
+      <div class="fc" id="f45Mode" style="margin-bottom:0">
+        <div class="fp act" data-mode="actual">Palm Springs (Actual)</div>
+        <div class="fp" data-mode="rpv" style="border-color:#f87171;color:#f87171">What RPV Looks Like</div>
+      </div>
+    </div>
     <div class="fc" id="f45"></div>
     <div class="cw"><canvas id="c45"></canvas></div>
-    <div class="ip">
+    <div class="ip" id="ip45">
       <strong>Finding:</strong> District 1 (51.5% non-white CVAP) and the rest of Palm Springs (avg 22.9% non-white CVAP)
       vote within <span class="hl">&plusmn;0.96 pts</span> of each other on average.
       Correlation: <span class="hl">r = 0.9984</span>.
@@ -357,10 +363,13 @@ function buildEco() {
 }
 
 function build45() {
-  // Filter chips
   const f = document.getElementById('f45');
   let activeFilter = 'all';
+  let activeMode = 'actual';
+  const ctx = document.getElementById('c45').getContext('2d');
+  let chart45;
 
+  // Race type filter chips
   FILTER_TYPES.forEach(([key, label]) => {
     const chip = document.createElement('div');
     chip.className = 'fp' + (key==='all'?' act':'');
@@ -374,21 +383,56 @@ function build45() {
     f.appendChild(chip);
   });
 
-  const ctx = document.getElementById('c45').getContext('2d');
-  let chart45;
+  // Mode toggle
+  document.querySelectorAll('#f45Mode .fp').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#f45Mode .fp').forEach(x => {
+        x.classList.remove('act');
+        x.style.borderColor = '';
+        x.style.color = '';
+        x.style.background = '';
+      });
+      btn.classList.add('act');
+      activeMode = btn.dataset.mode;
+      if (activeMode === 'rpv') {
+        btn.style.borderColor = '#f87171';
+        btn.style.color = '#fff';
+        btn.style.background = 'rgba(248,113,113,0.2)';
+      }
+      document.getElementById('f45').style.display = activeMode === 'rpv' ? 'none' : 'flex';
+      update45();
+    };
+  });
 
   function update45() {
-    const filtered = activeFilter === 'all' ? RACES : RACES.filter(r => r.type === activeFilter);
-    const typeColors = {dvr:'#6366f1',dvd:'#f87171',proposition:'#34d399',judicial:'#fb923c',nonpartisan:'#fb923c'};
+    const isSim = activeMode === 'rpv';
 
-    const data = filtered.map(r => ({
-      x: r.d1,
-      y: r.d25,
-      label: r.name,
-    }));
+    let data, bgColors, bdColors, tooltipFn, xMin, xMax, yMin, yMax;
 
-    const bgColors = filtered.map(r => (typeColors[r.type] || '#6366f1') + 'bb');
-    const bdColors = filtered.map(r => typeColors[r.type] || '#6366f1');
+    if (isSim) {
+      data = SIM_45.map((p,i) => ({x: p[0], y: p[1]}));
+      bgColors = SIM_45.map(() => '#6366f1bb');
+      bdColors = SIM_45.map(() => '#6366f1');
+      tooltipFn = (c) => {
+        const p = SIM_45[c.dataIndex];
+        if (!p) return '';
+        return [`Simulated Race`, `D1: ${p[0].toFixed(1)}%  Rest: ${p[1].toFixed(1)}%  Gap: +${(p[0]-p[1]).toFixed(1)}`];
+      };
+      xMin = 45; xMax = 90; yMin = 45; yMax = 90;
+    } else {
+      const filtered = activeFilter === 'all' ? RACES : RACES.filter(r => r.type === activeFilter);
+      const typeColors = {dvr:'#6366f1',dvd:'#f87171',proposition:'#34d399',judicial:'#fb923c',nonpartisan:'#fb923c'};
+      data = filtered.map(r => ({x: r.d1, y: r.d25}));
+      bgColors = filtered.map(r => (typeColors[r.type] || '#6366f1') + 'bb');
+      bdColors = filtered.map(r => typeColors[r.type] || '#6366f1');
+      tooltipFn = (c) => {
+        const filtered2 = activeFilter === 'all' ? RACES : RACES.filter(r => r.type === activeFilter);
+        const r = filtered2[c.dataIndex];
+        if (!r) return '';
+        return [`${r.name}`, `D1: ${r.d1.toFixed(1)}%  Rest: ${r.d25.toFixed(1)}%  Gap: ${r.gap>0?'+':''}${r.gap.toFixed(1)}`];
+      };
+      xMin = 10; xMax = 90; yMin = 10; yMax = 90;
+    }
 
     if (chart45) chart45.destroy();
 
@@ -418,26 +462,36 @@ function build45() {
       },
       options: {
         responsive: true,
+        animation: {duration: 400},
         plugins: {
           legend: {display:false},
-          tooltip: {
-            callbacks: {
-              label: (c) => {
-                const r = filtered[c.dataIndex];
-                if (!r) return '';
-                return [`${r.name}`, `D1: ${r.d1.toFixed(1)}%  Rest: ${r.d25.toFixed(1)}%  Gap: ${r.gap>0?'+':''}${r.gap.toFixed(1)}`];
-              }
-            }
-          }
+          tooltip: { callbacks: { label: tooltipFn } }
         },
         scales: {
           x: {title:{display:true,text:'District 1 Vote Share %',color:'#8888a0',font:{size:12}},
-              min:10,max:90,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}},
+              min:xMin,max:xMax,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}},
           y: {title:{display:true,text:'Districts 2\u20135 Vote Share %',color:'#8888a0',font:{size:12}},
-              min:10,max:90,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
+              min:yMin,max:yMax,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
         }
       }
     });
+
+    // Update subtitle and interpretation
+    const sub = document.getElementById('cs45');
+    const interp = document.getElementById('ip45');
+    if (isSim) {
+      sub.textContent = 'ILLUSTRATIVE: Simulated races. If D1 and D2\u20135 agreed, dots would fall on the diagonal.';
+      interp.innerHTML = `<strong>Illustrative comparison:</strong> With racially polarized voting, District 1 (majority-minority)
+        would consistently vote <strong>15\u201324 points more Democratic</strong> than the rest of the city.
+        The dots sit far above the diagonal, showing systematic divergence.
+        <br><br><strong>Compare to Palm Springs:</strong> every dot hugs the diagonal. Correlation r = 0.9984. <strong>No divergence.</strong>`;
+    } else {
+      sub.textContent = 'Each dot = one race. Diagonal line = perfect agreement between D1 and D2\u20135.';
+      interp.innerHTML = `<strong>Finding:</strong> District 1 (51.5% non-white CVAP) and the rest of Palm Springs (avg 22.9% non-white CVAP)
+        vote within <span class="hl">\u00B10.96 pts</span> of each other on average.
+        Correlation: <span class="hl">r = 0.9984</span>.
+        The demographics vary enormously; the voting does not.`;
+    }
   }
 
   update45();

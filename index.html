@@ -410,9 +410,11 @@ function build45() {
     let data, bgColors, bdColors, tooltipFn, xMin, xMax, yMin, yMax;
 
     if (isSim) {
+      // Assign mixed race-type colors to match the look of the actual chart
+      const simTypeColors = ['#6366f1','#6366f1','#6366f1','#6366f1','#34d399','#34d399','#fb923c','#fb923c','#fb923c','#f87171','#6366f1'];
       data = SIM_45.map((p,i) => ({x: p[0], y: p[1]}));
-      bgColors = SIM_45.map(() => '#6366f1bb');
-      bdColors = SIM_45.map(() => '#6366f1');
+      bgColors = SIM_45.map((_,i) => simTypeColors[i % simTypeColors.length] + 'bb');
+      bdColors = SIM_45.map((_,i) => simTypeColors[i % simTypeColors.length]);
       tooltipFn = (c) => {
         const p = SIM_45[c.dataIndex];
         if (!p) return '';

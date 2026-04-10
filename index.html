@@ -77,12 +77,18 @@ table.dt{width:100%;border-collapse:collapse;font-size:0.8rem;margin:12px 0}
 <div class="tc">
   <div class="tp act" id="p-eco">
     <div class="ct">Ecological Regression</div>
-    <div class="cs">Non-White CVAP % vs. Vote Share &mdash; 5 districts per race</div>
+    <div class="cs" id="ecoSubtitle">Non-White CVAP % vs. Vote Share &mdash; 5 districts per race</div>
+    <div style="display:flex;justify-content:center;margin-bottom:12px">
+      <div class="fc" id="fEcoMode" style="margin-bottom:0">
+        <div class="fp act" data-mode="actual">Palm Springs (Actual)</div>
+        <div class="fp" data-mode="rpv" style="border-color:#f87171;color:#f87171">What RPV Looks Like</div>
+      </div>
+    </div>
     <div class="fc" id="fEco"></div>
     <div class="cw"><canvas id="cEco"></canvas></div>
     <div class="lg" id="lgEco"></div>
     <p class="method-note">Standard RPV methodology: regress vote share on racial composition. Steep slope = polarization.</p>
-    <div class="ip">
+    <div class="ip" id="ecoInterp">
       <strong>Finding:</strong> The regression line is <strong>essentially flat</strong> (slope = <span class="hl">-0.026</span>).
       Racial composition explains <span class="hl">0.03%</span> of the variance in vote share (R&sup2; = 0.0003).
       In successful RPV cases, plaintiffs typically show R&sup2; of 0.50&ndash;0.90.
@@ -192,9 +198,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function buildEco() {
   const f = document.getElementById('fEco');
   let activeFilter = 'all';
+  let activeMode = 'actual';
   let chartEco;
   const ctx = document.getElementById('cEco').getContext('2d');
 
+  // Race type filter chips
   FILTER_TYPES.forEach(([key, label]) => {
     const chip = document.createElement('div');
     chip.className = 'fp' + (key==='all'?' act':'');
@@ -208,6 +216,28 @@ function buildEco() {
     f.appendChild(chip);
   });
 
+  // Mode toggle (actual vs RPV simulation)
+  document.querySelectorAll('#fEcoMode .fp').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#fEcoMode .fp').forEach(x => {
+        x.classList.remove('act');
+        x.style.borderColor = '';
+        x.style.color = '';
+        x.style.background = '';
+      });
+      btn.classList.add('act');
+      activeMode = btn.dataset.mode;
+      if (activeMode === 'rpv') {
+        btn.style.borderColor = '#f87171';
+        btn.style.color = '#fff';
+        btn.style.background = 'rgba(248,113,113,0.2)';
+      }
+      // Hide/show type filters for RPV mode (sim only has "partisan" data)
+      document.getElementById('fEco').style.display = activeMode === 'rpv' ? 'none' : 'flex';
+      updateEco();
+    };
+  });
+
   // Legend
   const lg = document.getElementById('lgEco');
   for (let d = 1; d <= 5; d++) {
@@ -215,45 +245,59 @@ function buildEco() {
   }
 
   function updateEco() {
-    const filtered = activeFilter === 'all' ? ECO_POINTS : ECO_POINTS.filter(p => p[3] === activeFilter);
-    const nPts = filtered.length;
-    const nRaces = nPts / 5;
+    const isSim = activeMode === 'rpv';
+    let points, slope, intercept, r2, nRaces, yLabel, nPts;
 
-    // Compute regression for filtered set
-    const xs = filtered.map(p => p[0]);
-    const ys = filtered.map(p => p[1]);
-    const n = xs.length;
-    const mx = xs.reduce((a,b)=>a+b,0)/n;
-    const my = ys.reduce((a,b)=>a+b,0)/n;
-    let ssxy=0, ssxx=0, ssyy=0;
-    for (let i=0;i<n;i++){ssxy+=(xs[i]-mx)*(ys[i]-my);ssxx+=(xs[i]-mx)**2;ssyy+=(ys[i]-my)**2;}
-    const slope = ssxx>0 ? ssxy/ssxx : 0;
-    const intercept = my - slope*mx;
-    const r2 = (ssxx>0&&ssyy>0) ? (ssxy**2)/(ssxx*ssyy) : 0;
+    if (isSim) {
+      points = SIM_ECO;  // [nwCvap, votePct, district]
+      nPts = points.length;
+      nRaces = nPts / 5;
+      slope = SIM_STATS.slope;
+      intercept = SIM_STATS.intercept;
+      r2 = SIM_STATS.r2;
+      yLabel = 'DEM Vote Share %';
+    } else {
+      const filtered = activeFilter === 'all' ? ECO_POINTS : ECO_POINTS.filter(p => p[3] === activeFilter);
+      points = filtered;
+      nPts = filtered.length;
+      nRaces = nPts / 5;
 
-    // Y-axis label based on filter
-    const yLabels = {all:'Vote Share %',dvr:'DEM Vote Share %',dvd:'Candidate Vote Share %',judicial:'% Yes (Retain)',proposition:'% Yes',nonpartisan:'Candidate Vote Share %'};
-    const yLabel = yLabels[activeFilter] || 'Vote Share %';
+      const xs = filtered.map(p => p[0]);
+      const ys = filtered.map(p => p[1]);
+      const n = xs.length;
+      if (n === 0) { return; }
+      const mx = xs.reduce((a,b)=>a+b,0)/n;
+      const my = ys.reduce((a,b)=>a+b,0)/n;
+      let ssxy=0, ssxx=0, ssyy=0;
+      for (let i=0;i<n;i++){ssxy+=(xs[i]-mx)*(ys[i]-my);ssxx+=(xs[i]-mx)**2;ssyy+=(ys[i]-my)**2;}
+      slope = ssxx>0 ? ssxy/ssxx : 0;
+      intercept = my - slope*mx;
+      r2 = (ssxx>0&&ssyy>0) ? (ssxy**2)/(ssxx*ssyy) : 0;
+
+      const yLabels = {all:'Vote Share %',dvr:'DEM Vote Share %',dvd:'Candidate Vote Share %',judicial:'% Yes (Retain)',proposition:'% Yes',nonpartisan:'Candidate Vote Share %'};
+      yLabel = yLabels[activeFilter] || 'Vote Share %';
+    }
 
     // Build datasets by district
     const datasets = [];
     for (let d = 1; d <= 5; d++) {
-      const pts = filtered.filter(p => p[2] === d).map(p => ({x: p[0], y: p[1]}));
+      const pts = points.filter(p => p[2] === d).map(p => ({x: p[0], y: p[1]}));
       datasets.push({
         label: DN[d-1],
         data: pts,
-        backgroundColor: DC[d-1] + '99',
-        borderColor: DC[d-1],
+        backgroundColor: (isSim ? '#f8717188' : DC[d-1] + '99'),
+        borderColor: (isSim ? '#f87171' : DC[d-1]),
         pointRadius: 4.5,
         pointHoverRadius: 7,
       });
     }
     // Regression line
+    const lineColor = isSim ? '#f87171aa' : '#ffffff44';
     datasets.push({
       label: `Regression (slope=${slope.toFixed(3)}, R\u00B2=${r2.toFixed(4)})`,
       data: [{x:10,y:intercept+slope*10},{x:55,y:intercept+slope*55}],
       type: 'line',
-      borderColor: '#ffffff44',
+      borderColor: lineColor,
       borderWidth: 2,
       borderDash: [6,4],
       pointRadius: 0,
@@ -266,6 +310,7 @@ function buildEco() {
       data: {datasets},
       options: {
         responsive: true,
+        animation: {duration: 400},
         plugins: {
           legend: {display: false},
           tooltip: {
@@ -281,14 +326,31 @@ function buildEco() {
           x: {title:{display:true,text:'Non-White CVAP %',color:'#8888a0',font:{size:12}},
               min:8,max:56,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}},
           y: {title:{display:true,text:yLabel,color:'#8888a0',font:{size:12}},
-              min:0,max:100,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
+              min:isSim?35:0,max:isSim?95:100,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
         }
       }
     });
 
     // Update subtitle
-    document.querySelector('#p-eco .cs').textContent =
-      `${Math.round(nRaces)} races \u00D7 5 districts = ${nPts} observations | slope = ${slope.toFixed(3)}, R\u00B2 = ${r2.toFixed(4)}`;
+    document.getElementById('ecoSubtitle').textContent = isSim
+      ? `ILLUSTRATIVE: 11 simulated races \u00D7 5 districts = 55 points | slope = ${slope.toFixed(3)}, R\u00B2 = ${r2.toFixed(4)}`
+      : `${Math.round(nRaces)} races \u00D7 5 districts = ${nPts} observations | slope = ${slope.toFixed(3)}, R\u00B2 = ${r2.toFixed(4)}`;
+
+    // Update interpretation
+    const interp = document.getElementById('ecoInterp');
+    if (isSim) {
+      interp.innerHTML = `<strong>Illustrative comparison:</strong> This simulated data shows what racially polarized voting looks like.
+        The regression line slopes <strong>steeply upward</strong> (slope = <span class="hl" style="background:rgba(248,113,113,.2)">${slope.toFixed(2)}</span>),
+        meaning each percentage point increase in minority population predicts a ${slope.toFixed(1)}-point increase in DEM vote share.
+        R&sup2; = <span class="hl" style="background:rgba(248,113,113,.2)">${r2.toFixed(2)}</span> &mdash; racial composition explains <strong>${(r2*100).toFixed(0)}%</strong> of the vote variance.
+        District 1 (51% non-white) would average ~${(intercept + slope * 51.49).toFixed(0)}% DEM while District 5 (16% non-white) would average ~${(intercept + slope * 15.94).toFixed(0)}% DEM &mdash; a ${((slope * 51.49) - (slope * 15.94)).toFixed(0)}-point gap.
+        <br><br><strong>Compare this to Palm Springs:</strong> slope = -0.026, R&sup2; = 0.0003. <strong>No polarization.</strong>`;
+    } else {
+      interp.innerHTML = `<strong>Finding:</strong> The regression line is <strong>essentially flat</strong> (slope = <span class="hl">${slope.toFixed(3)}</span>).
+        Racial composition explains <span class="hl">${(r2*100).toFixed(2)}%</span> of the variance in vote share (R&sup2; = ${r2.toFixed(4)}).
+        In successful RPV cases, plaintiffs typically show R&sup2; of 0.50&ndash;0.90.
+        ${slope < 0 ? 'The slight negative slope means more-minority districts are marginally <em>less</em> progressive &mdash; the <strong>opposite</strong> of an RPV finding.' : ''}`;
+    }
   }
 
   updateEco();

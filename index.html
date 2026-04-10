@@ -77,7 +77,8 @@ table.dt{width:100%;border-collapse:collapse;font-size:0.8rem;margin:12px 0}
 <div class="tc">
   <div class="tp act" id="p-eco">
     <div class="ct">Ecological Regression</div>
-    <div class="cs">Non-White CVAP % vs. DEM/Yes Vote Share &mdash; 5 districts x 38 races = 190 observations</div>
+    <div class="cs">Non-White CVAP % vs. Vote Share &mdash; 5 districts per race</div>
+    <div class="fc" id="fEco"></div>
     <div class="cw"><canvas id="cEco"></canvas></div>
     <div class="lg" id="lgEco"></div>
     <p class="method-note">Standard RPV methodology: regress vote share on racial composition. Steep slope = polarization.</p>
@@ -175,6 +176,12 @@ document.addEventListener('DOMContentLoaded', () => {
     tb.appendChild(b);
   });
 
+  // Shared filter types
+  window.FILTER_TYPES = [['all','All Races'],['dvr','Partisan (D vs R)'],['dvd','D vs D'],['judicial','Judicial / Non-Partisan'],['proposition','Propositions']];
+  // Merge nonpartisan into judicial for filter purposes
+  RACES.forEach(r => { if (r.type === 'nonpartisan') r.type = 'judicial'; });
+  ECO_POINTS.forEach(p => { if (p[3] === 'nonpartisan') p[3] = 'judicial'; });
+
   buildEco();
   build45();
   buildGap();
@@ -183,56 +190,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function buildEco() {
+  const f = document.getElementById('fEco');
+  let activeFilter = 'all';
+  let chartEco;
   const ctx = document.getElementById('cEco').getContext('2d');
-  const datasets = [];
-  for (let d = 1; d <= 5; d++) {
-    const pts = ECO_POINTS.filter(p => p[2] === d).map(p => ({x: p[0], y: p[1]}));
-    datasets.push({
-      label: DN[d-1],
-      data: pts,
-      backgroundColor: DC[d-1] + '99',
-      borderColor: DC[d-1],
-      pointRadius: 4,
-      pointHoverRadius: 6,
-    });
-  }
-  // Regression line
-  const slope = STATS.eco_slope;
-  const intercept = STATS.eco_intercept;
-  datasets.push({
-    label: `Regression (slope=${slope.toFixed(3)}, R\u00B2=${STATS.eco_r_squared.toFixed(4)})`,
-    data: [{x:10,y:intercept+slope*10},{x:55,y:intercept+slope*55}],
-    type: 'line',
-    borderColor: '#ffffff44',
-    borderWidth: 2,
-    borderDash: [6,4],
-    pointRadius: 0,
-    fill: false,
-  });
 
-  new Chart(ctx, {
-    type: 'scatter',
-    data: {datasets},
-    options: {
-      responsive: true,
-      plugins: {
-        legend: {display: false},
-        tooltip: {
-          callbacks: {
-            label: (c) => {
-              const ds = c.dataset;
-              return `${ds.label}: ${c.parsed.x.toFixed(1)}% NW CVAP, ${c.parsed.y.toFixed(1)}% vote`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: {title:{display:true,text:'Non-White CVAP %',color:'#8888a0',font:{size:12}},
-            min:8,max:56,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}},
-        y: {title:{display:true,text:'DEM / Yes Vote Share %',color:'#8888a0',font:{size:12}},
-            min:0,max:100,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
-      }
-    }
+  FILTER_TYPES.forEach(([key, label]) => {
+    const chip = document.createElement('div');
+    chip.className = 'fp' + (key==='all'?' act':'');
+    chip.textContent = label;
+    chip.onclick = () => {
+      document.querySelectorAll('#fEco .fp').forEach(x=>x.classList.remove('act'));
+      chip.classList.add('act');
+      activeFilter = key;
+      updateEco();
+    };
+    f.appendChild(chip);
   });
 
   // Legend
@@ -240,23 +213,100 @@ function buildEco() {
   for (let d = 1; d <= 5; d++) {
     lg.innerHTML += `<div class="li"><div class="ld" style="background:${DC[d-1]}"></div>${DN[d-1]} (${DEM[d].nwCvap}% NW CVAP)</div>`;
   }
+
+  function updateEco() {
+    const filtered = activeFilter === 'all' ? ECO_POINTS : ECO_POINTS.filter(p => p[3] === activeFilter);
+    const nPts = filtered.length;
+    const nRaces = nPts / 5;
+
+    // Compute regression for filtered set
+    const xs = filtered.map(p => p[0]);
+    const ys = filtered.map(p => p[1]);
+    const n = xs.length;
+    const mx = xs.reduce((a,b)=>a+b,0)/n;
+    const my = ys.reduce((a,b)=>a+b,0)/n;
+    let ssxy=0, ssxx=0, ssyy=0;
+    for (let i=0;i<n;i++){ssxy+=(xs[i]-mx)*(ys[i]-my);ssxx+=(xs[i]-mx)**2;ssyy+=(ys[i]-my)**2;}
+    const slope = ssxx>0 ? ssxy/ssxx : 0;
+    const intercept = my - slope*mx;
+    const r2 = (ssxx>0&&ssyy>0) ? (ssxy**2)/(ssxx*ssyy) : 0;
+
+    // Y-axis label based on filter
+    const yLabels = {all:'Vote Share %',dvr:'DEM Vote Share %',dvd:'Candidate Vote Share %',judicial:'% Yes (Retain)',proposition:'% Yes',nonpartisan:'Candidate Vote Share %'};
+    const yLabel = yLabels[activeFilter] || 'Vote Share %';
+
+    // Build datasets by district
+    const datasets = [];
+    for (let d = 1; d <= 5; d++) {
+      const pts = filtered.filter(p => p[2] === d).map(p => ({x: p[0], y: p[1]}));
+      datasets.push({
+        label: DN[d-1],
+        data: pts,
+        backgroundColor: DC[d-1] + '99',
+        borderColor: DC[d-1],
+        pointRadius: 4.5,
+        pointHoverRadius: 7,
+      });
+    }
+    // Regression line
+    datasets.push({
+      label: `Regression (slope=${slope.toFixed(3)}, R\u00B2=${r2.toFixed(4)})`,
+      data: [{x:10,y:intercept+slope*10},{x:55,y:intercept+slope*55}],
+      type: 'line',
+      borderColor: '#ffffff44',
+      borderWidth: 2,
+      borderDash: [6,4],
+      pointRadius: 0,
+      fill: false,
+    });
+
+    if (chartEco) chartEco.destroy();
+    chartEco = new Chart(ctx, {
+      type: 'scatter',
+      data: {datasets},
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            callbacks: {
+              label: (c) => {
+                const ds = c.dataset;
+                return `${ds.label}: ${c.parsed.x.toFixed(1)}% NW CVAP, ${c.parsed.y.toFixed(1)}% vote`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {title:{display:true,text:'Non-White CVAP %',color:'#8888a0',font:{size:12}},
+              min:8,max:56,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}},
+          y: {title:{display:true,text:yLabel,color:'#8888a0',font:{size:12}},
+              min:0,max:100,grid:{color:'#2a2a3a'},ticks:{color:'#8888a0'}}
+        }
+      }
+    });
+
+    // Update subtitle
+    document.querySelector('#p-eco .cs').textContent =
+      `${Math.round(nRaces)} races \u00D7 5 districts = ${nPts} observations | slope = ${slope.toFixed(3)}, R\u00B2 = ${r2.toFixed(4)}`;
+  }
+
+  updateEco();
 }
 
 function build45() {
   // Filter chips
   const f = document.getElementById('f45');
-  const types = ['all','partisan','proposition','judicial','nonpartisan'];
-  const typeLabels = {all:'All Races',partisan:'Partisan',proposition:'Propositions',judicial:'Judicial',nonpartisan:'Non-Partisan'};
   let activeFilter = 'all';
 
-  types.forEach(t => {
+  FILTER_TYPES.forEach(([key, label]) => {
     const chip = document.createElement('div');
-    chip.className = 'fp' + (t==='all'?' act':'');
-    chip.textContent = typeLabels[t];
+    chip.className = 'fp' + (key==='all'?' act':'');
+    chip.textContent = label;
     chip.onclick = () => {
       document.querySelectorAll('#f45 .fp').forEach(x=>x.classList.remove('act'));
       chip.classList.add('act');
-      activeFilter = t;
+      activeFilter = key;
       update45();
     };
     f.appendChild(chip);
@@ -267,7 +317,7 @@ function build45() {
 
   function update45() {
     const filtered = activeFilter === 'all' ? RACES : RACES.filter(r => r.type === activeFilter);
-    const typeColors = {partisan:'#6366f1',proposition:'#34d399',judicial:'#fb923c',nonpartisan:'#f87171'};
+    const typeColors = {dvr:'#6366f1',dvd:'#f87171',proposition:'#34d399',judicial:'#fb923c',nonpartisan:'#fb923c'};
 
     const data = filtered.map(r => ({
       x: r.d1,
@@ -386,7 +436,7 @@ function buildGap() {
 function buildExplorer() {
   const sel = document.getElementById('rSel');
   // Group by type
-  const groups = {partisan:'Partisan Races',proposition:'Propositions',judicial:'Judicial Retention',nonpartisan:'Non-Partisan'};
+  const groups = {dvr:'Partisan (D vs R)',dvd:'D vs D',judicial:'Judicial / Non-Partisan',proposition:'Propositions'};
   Object.entries(groups).forEach(([type, label]) => {
     const og = document.createElement('optgroup');
     og.label = label;
